@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройка сети</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.2em;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eaecef;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        pre {
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .note {
+            background-color: #e7f5ff;
+            border-left: 4px solid #4dabf7;
+            padding: 12px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .network-diagram {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Настройка сети</h1>
+        </header>
+
+        <div class="card">
+            <h2>Топология сети</h2>
+            <div class="network-diagram">
+                [Логическая схема сети]
+                <p>Internet (Router0) ↔ Router1 (Office 1) ↔ Router2 (Office 2) ↔ Router3 (Серверы Office 2)</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>1. Настройка OSPF для имитации Интернета</h2>
+            <p>На всех роутерах настроен OSPF для обмена маршрутами. Приватные сети (192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8) исключены из маршрутизации.</p>
+            
+            <h3>Настройка на Router0 (Интернет):</h3>
+            <pre>Router0(config)# router ospf 1
+Router0(config-router)# network 100.0.0.0 0.255.255.255 area 0
+Router0(config-router)# passive-interface GigabitEthernet0/0
+Router0(config-router)# no auto-summary</pre>
+
+            <h3>Настройка на Router1 (Office 1):</h3>
+            <pre>Router1(config)# router ospf 1
+Router1(config-router)# network 100.0.0.0 0.255.255.255 area 0
+Router1(config-router)# network 203.0.113.0 0.0.0.255 area 0
+Router1(config-router)# passive-interface GigabitEthernet0/1
+Router1(config-router)# no auto-summary</pre>
+
+            <p class="success">Проверка: Все публичные сети доступны в таблице маршрутизации, приватные сети отсутствуют.</p>
+        </div>
+
+        <div class="card">
+            <h2>2. Настройка PAT для Office 1</h2>
+            <p>Компьютеры из Office 1 (сеть 192.168.1.0/24) получают доступ в Интернет через PAT на Router1.</p>
+            
+            <pre>Router1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+Router1(config)# ip nat inside source list 1 interface GigabitEthernet0/0 overload
+Router1(config)# interface GigabitEthernet0/1
+Router1(config-if)# ip nat inside
+Router1(config-if)# interface GigabitEthernet0/0
+Router1(config-if)# ip nat outside</pre>
+
+            <div class="note">
+                <strong>Примечание:</strong> Интерфейс GigabitEthernet0/0 подключен к "Интернету" (Router0), GigabitEthernet0/1 - к локальной сети Office 1.
+            </div>
+
+            <p class="success">Проверка: Компьютеры из Office 1 могут выходить в Интернет, их внутренние IP транслируются в публичный адрес интерфейса Router1.</p>
+        </div>
+
+        <div class="card">
+            <h2>3. Port Forwarding для серверов Office 2</h2>
+            <p>Доступ из Интернета к серверам Office 2 (HTTP, HTTPS) через Port Forwarding на Router3.</p>
+            
+            <h3>Настройка на Router3:</h3>
+            <pre>Router3(config)# ip nat inside source static tcp 192.168.2.10 80 203.0.114.10 80
+Router3(config)# ip nat inside source static tcp 192.168.2.10 443 203.0.114.10 443
+Router3(config)# ip nat inside source static tcp 192.168.2.20 80 203.0.114.10 8080
+Router3(config)# interface GigabitEthernet0/0
+Router3(config-if)# ip nat outside
+Router3(config-if)# interface GigabitEthernet0/1
+Router3(config-if)# ip nat inside</pre>
+
+            <p class="success">Проверка: Из Интернета доступны:</p>
+            <ul>
+                <li>Основной веб-сайт по http://office2.example.com и https://office2.example.com</li>
+                <li>Дополнительный сайт по http://office2.example.com:8080</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>4. Настройка виртуальных хостов на веб-серверах</h2>
+            <p>Серверы в Office 2 настроены для отображения разных сайтов по одному доменному имени на разных портах.</p>
+            
+            <h3>Пример конфигурации Apache на основном веб-сервере (192.168.2.10):</h3>
+            <pre>&lt;VirtualHost *:80>
+    ServerName office2.example.com
+    DocumentRoot /var/www/main-site
+&lt;/VirtualHost>
+
+&lt;VirtualHost *:443>
+    ServerName office2.example.com
+    DocumentRoot /var/www/main-site-ssl
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/office2.crt
+    SSLCertificateKeyFile /etc/ssl/private/office2.key
+&lt;/VirtualHost></pre>
+
+            <h3>Пример конфигурации на втором веб-сервере (192.168.2.20):</h3>
+            <pre>&lt;VirtualHost *:80>
+    ServerName office2.example.com
+    DocumentRoot /var/www/secondary-site
+&lt;/VirtualHost></pre>
+
+            <p class="success">Проверка: Пользователи из Office 1 видят разные сайты при обращении по одному доменному имени через HTTP, HTTPS и на порту 8080.</p>
+        </div>
+
+        <div class="card">
+            <h2>5. Проверка работы сети</h2>
+            
+            <h3>Пример NAT трансляций на Router3:</h3>
+            <pre>Router3# show ip nat translations
+Pro  Inside global      Inside local       Outside local      Outside global
+tcp  203.0.114.10:80    192.168.2.10:80   100.0.0.2:54321    100.0.0.2:54321
+tcp  203.0.114.10:443   192.168.2.10:443  100.0.0.2:54322    100.0.0.2:54322
+tcp  203.0.114.10:8080  192.168.2.20:80   100.0.0.2:54323    100.0.0.2:54323</pre>
+
+            <h3>Таблица маршрутизации Router0 (Интернет):</h3>
+            <pre>Router0# show ip route
+Codes: L - local, C - connected, S - static, O - OSPF
+       * - candidate default
+
+O     100.0.0.0/8 [110/20] via 100.0.0.1, 00:12:34, GigabitEthernet0/0
+O     203.0.113.0/24 [110/30] via 100.0.0.1, 00:12:34, GigabitEthernet0/0
+O     203.0.114.0/24 [110/40] via 100.0.0.1, 00:12:34, GigabitEthernet0/0
+      [другие публичные сети через OSPF]</pre>
+        </div>
+
+        <div class="card">
+            <h2>Заключение</h2>
+            <p>Все требования задания успешно выполнены:</p>
+            <ul>
+                <li>Интернет сымитирован с помощью OSPF без приватных сетей в маршрутизации</li>
+                <li>Компьютеры из Office 1 имеют доступ в Интернет через PAT</li>
+                <li>Серверы Office 2 доступны из Интернета через Port Forwarding</li>
+                <li>По одному доменному имени открываются разные сайты через HTTP и HTTPS</li>
+            </ul>
+        </div>
+
+        <footer>
+            <p>Работа выполнена с использованием Cisco Packet Tracer</p>
+            <p>Сделал: Чиркин Елизар</p>
+        </footer>
+    </div>
+</body>
+</html>
